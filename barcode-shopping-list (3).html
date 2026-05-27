@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cart — Barcode Shopping List</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #F5F2EC; --surface: #FFFFFF; --ink: #1A1814; --ink2: #6B6760;
+    --ink3: #AAA8A3; --accent: #D4500A; --border: rgba(26,24,20,0.12);
+    --mono: 'DM Mono', monospace; --sans: 'Syne', sans-serif;
+  }
+  body { font-family: var(--sans); background: var(--bg); color: var(--ink); min-height: 100vh; }
+  .shell { max-width: 520px; margin: 0 auto; padding: 24px 16px 80px; }
+  header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1.5px solid var(--ink); }
+  .logo { font-size: 28px; font-weight: 700; letter-spacing: -1px; }
+  .logo span { color: var(--accent); }
+  .header-meta { font-family: var(--mono); font-size: 11px; color: var(--ink2); text-align: right; line-height: 1.6; }
+
+  /* Scanner card */
+  .scanner-card { background: var(--ink); border-radius: 16px; overflow: hidden; margin-bottom: 12px; }
+  .scanner-inner { position: relative; aspect-ratio: 4/3; width: 100%; background: #0d0c0a; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  #video { width: 100%; height: 100%; object-fit: cover; display: none; }
+
+  .scanner-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  .scan-frame { width: 65%; aspect-ratio: 3/1; border: 2px solid rgba(255,255,255,0.6); border-radius: 6px; position: relative; }
+  .scan-line { position: absolute; top: -1px; left: 15%; right: 15%; height: 2px; background: var(--accent); animation: scan 2s ease-in-out infinite; }
+  @keyframes scan { 0%,100% { top:-1px; } 50% { top:calc(100% - 1px); } }
+  .corner { position: absolute; width: 14px; height: 14px; border-color: white; border-style: solid; }
+  .corner-tl { top:-2px; left:-2px; border-width:2px 0 0 2px; border-radius:3px 0 0 0; }
+  .corner-tr { top:-2px; right:-2px; border-width:2px 2px 0 0; border-radius:0 3px 0 0; }
+  .corner-bl { bottom:-2px; left:-2px; border-width:0 0 2px 2px; border-radius:0 0 0 3px; }
+  .corner-br { bottom:-2px; right:-2px; border-width:0 2px 2px 0; border-radius:0 0 3px 0; }
+
+  /* Permission prompt (shown before camera starts) */
+  .perm-prompt { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 28px 20px; text-align: center; }
+  .perm-icon { width: 64px; height: 64px; border-radius: 16px; background: rgba(212,80,10,0.15); display: flex; align-items: center; justify-content: center; }
+  .perm-icon svg { width: 32px; height: 32px; color: var(--accent); stroke: currentColor; }
+  .perm-title { font-size: 16px; font-weight: 600; color: white; }
+  .perm-sub { font-family: var(--mono); font-size: 11px; color: rgba(255,255,255,0.45); line-height: 1.6; max-width: 260px; }
+  .perm-btn { background: var(--accent); color: white; border: none; border-radius: 10px; padding: 11px 28px; font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .perm-btn:active { opacity: .8; }
+
+  /* Denied state */
+  .denied-state { display: none; flex-direction: column; align-items: center; gap: 12px; padding: 28px 20px; text-align: center; }
+  .denied-state p { font-family: var(--mono); font-size: 12px; color: rgba(255,255,255,0.5); line-height: 1.7; max-width: 280px; }
+  .denied-state strong { color: rgba(255,255,255,0.8); }
+
+  .scanner-controls { padding: 14px 16px; display: flex; gap: 10px; }
+  .btn-primary { flex: 1; background: var(--accent); color: white; border: none; border-radius: 10px; padding: 12px 20px; font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+  .btn-primary:hover { opacity: .9; }
+  .btn-primary:active { opacity: .75; }
+  .btn-stop { background: rgba(255,255,255,0.12); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 12px 18px; font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer; display: none; }
+  .btn-stop:hover { background: rgba(255,255,255,0.2); }
+
+  .status-row { font-family: var(--mono); font-size: 12px; color: var(--ink2); padding: 10px 2px; display: flex; align-items: center; gap: 8px; min-height: 36px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink3); flex-shrink: 0; }
+  .dot.active { background: var(--accent); animation: blink 1s infinite; }
+  .dot.ok { background: #2A7A4B; }
+  .dot.err { background: #C0392B; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  .manual-section { display: flex; gap: 8px; margin-bottom: 24px; }
+  .manual-input { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; font-family: var(--mono); font-size: 13px; color: var(--ink); outline: none; }
+  .manual-input:focus { border-color: var(--accent); }
+  .manual-input::placeholder { color: var(--ink3); }
+  .lookup-btn { background: var(--ink); color: white; border: none; border-radius: 10px; padding: 11px 16px; font-family: var(--sans); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .lookup-btn:hover { opacity: .85; }
+
+  .list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .list-title { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink2); }
+  .clear-btn { font-family: var(--mono); font-size: 11px; color: var(--ink3); background: none; border: none; cursor: pointer; }
+  .clear-btn:hover { color: var(--accent); }
+
+  .empty-state { background: var(--surface); border: 1.5px dashed var(--border); border-radius: 14px; padding: 40px 20px; text-align: center; }
+  .empty-state p { font-family: var(--mono); font-size: 12px; color: var(--ink3); }
+
+  .item-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 8px; animation: slideIn 0.2s ease-out; }
+  @keyframes slideIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+  .item-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+  .item-info { flex: 1; min-width: 0; }
+  .item-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-meta { font-family: var(--mono); font-size: 11px; color: var(--ink2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qty-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .qty-btn { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-family: var(--mono); color: var(--ink); }
+  .qty-btn:hover { background: var(--surface); }
+  .qty-num { font-family: var(--mono); font-size: 14px; font-weight: 500; min-width: 22px; text-align: center; }
+  .del-btn { width: 28px; height: 28px; border-radius: 7px; border: none; background: none; cursor: pointer; color: var(--ink3); font-size: 16px; display: flex; align-items: center; justify-content: center; }
+  .del-btn:hover { color: var(--accent); }
+  .edit-btn { width: 28px; height: 28px; border-radius: 7px; border: none; background: none; cursor: pointer; color: var(--ink3); font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .edit-btn:hover { color: var(--ink); }
+  .item-name-edit { font-size: 14px; font-weight: 600; font-family: var(--sans); border: none; border-bottom: 1.5px solid var(--accent); background: transparent; color: var(--ink); outline: none; width: 100%; padding: 0 0 2px; }
+  .custom-badge { font-family: var(--mono); font-size: 10px; color: var(--accent); margin-left: 5px; opacity: 0.7; }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--ink); color: white; padding: 10px 20px; border-radius: 99px; font-family: var(--mono); font-size: 12px; pointer-events: none; transition: transform .25s, opacity .25s; opacity: 0; white-space: nowrap; z-index: 100; }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  .tally-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 520px; background: var(--surface); border-top: 1px solid var(--border); padding: 14px 20px; display: none; align-items: center; justify-content: space-between; }
+  .tally-label { font-family: var(--mono); font-size: 12px; color: var(--ink2); }
+  .tally-count { font-size: 18px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div class="logo">CART<span>.</span></div>
+    <div class="header-meta">Barcode scanner<br>+ shopping list</div>
+  </header>
+
+  <div class="scanner-card">
+    <div class="scanner-inner" id="scanner-inner">
+
+      <!-- Step 1: Ask for permission -->
+      <div class="perm-prompt" id="perm-prompt">
+        <div class="perm-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+        </div>
+        <div class="perm-title">Camera access needed</div>
+        <div class="perm-sub">To scan barcodes, this app needs to use your camera. Your browser will ask you to allow it.</div>
+        <button class="perm-btn" id="perm-btn" onclick="requestCamera()">Allow camera</button>
+      </div>
+
+      <!-- Step 2: Denied fallback -->
+      <div class="denied-state" id="denied-state">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+        </svg>
+        <p>
+          Camera access was blocked.<br>
+          <strong>To fix on Android:</strong> tap the 🔒 lock icon in your browser's address bar → Site settings → Camera → Allow, then reload.<br>
+          <strong>Manual entry</strong> still works below.
+        </p>
+      </div>
+
+      <!-- Step 3: Live feed -->
+      <video id="video" autoplay playsinline muted></video>
+      <div class="scanner-overlay" id="scan-overlay" style="display:none;">
+        <div class="scan-frame">
+          <div class="scan-line"></div>
+          <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
+          <div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="scanner-controls">
+      <button class="btn-primary" id="start-btn" onclick="startScan()" style="display:none;">Start scanning</button>
+      <button class="btn-stop"    id="stop-btn"  onclick="stopScan()">Stop scanning</button>
+    </div>
+  </div>
+
+  <div class="status-row">
+    <div class="dot" id="dot"></div>
+    <span id="status-text">Tap "Allow camera" to begin</span>
+  </div>
+
+  <div class="manual-section">
+    <input class="manual-input" id="manual-input" type="text" placeholder="Or enter barcode manually…" inputmode="numeric" />
+    <button class="lookup-btn" onclick="manualLookup()">Look up</button>
+  </div>
+
+  <div class="list-header">
+    <div class="list-title">Shopping list</div>
+    <button class="clear-btn" id="clear-btn" onclick="clearList()" style="display:none;">Clear all</button>
+  </div>
+  <div id="item-list">
+    <div class="empty-state"><p>scan or type a barcode to add items</p></div>
+  </div>
+</div>
+
+<div class="tally-bar" id="tally-bar">
+  <span class="tally-label">Total items</span>
+  <span class="tally-count" id="tally-count">0</span>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+let items = [];
+let scanning = false;
+let videoStream = null;
+let detector = null;
+let tickTimer = null;
+let cooldownSet = new Set();
+let permissionGranted = false;
+
+// Persistent custom barcode names: { barcode: { name, emoji } }
+let customNames = {};
+try { customNames = JSON.parse(localStorage.getItem('cart_custom_names') || '{}' ); } catch(_) {}
+function saveCustomNames() { try { localStorage.setItem('cart_custom_names', JSON.stringify(customNames)); } catch(_) {} }
+
+const video = document.getElementById('video');
+
+// ── UI helpers ──────────────────────────────────────────────────────────
+function setStatus(msg, mode) {
+  document.getElementById('status-text').textContent = msg;
+  document.getElementById('dot').className = 'dot' + (mode ? ' ' + mode : '');
+}
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => t.classList.remove('show'), 2400);
+}
+function show(id) { document.getElementById(id).style.display = 'flex'; }
+function hide(id) { document.getElementById(id).style.display = 'none'; }
+
+// ── Step 1: Request camera permission ───────────────────────────────────
+async function requestCamera() {
+  // Check BarcodeDetector first
+  if (!('BarcodeDetector' in window)) {
+    document.getElementById('perm-prompt').innerHTML = `
+      <div style="padding:20px 16px; text-align:center;">
+        <p style="font-family:var(--mono); font-size:12px; color:rgba(255,255,255,0.5); line-height:1.8;">
+          Your browser doesn't support barcode scanning.<br>
+          <strong style="color:rgba(255,255,255,0.7);">Use Chrome on Android</strong> for camera scanning,<br>
+          or use manual entry below.
+        </p>
+      </div>`;
+    setStatus('BarcodeDetector not supported', 'err');
+    return;
+  }
+
+  // Disable button while asking
+  const btn = document.getElementById('perm-btn');
+  btn.textContent = 'Asking…';
+  btn.disabled = true;
+
+  try {
+    // This call triggers the native Android/browser permission dialog
+    videoStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' }, // rear camera preferred
+        width:  { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    });
+
+    // Permission granted — set up detector
+    detector = new BarcodeDetector({
+      formats: ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','code_93','itf','codabar','qr_code','data_matrix']
+    });
+
+    permissionGranted = true;
+    hide('perm-prompt');
+    show('start-btn');
+    hide('stop-btn');
+
+    // Immediately start scanning now that we have permission + stream
+    startScan();
+
+  } catch(e) {
+    hide('perm-prompt');
+    show('denied-state');
+    if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+      setStatus('Camera permission denied', 'err');
+    } else if (e.name === 'NotFoundError') {
+      setStatus('No camera found on this device', 'err');
+    } else {
+      setStatus('Camera error: ' + e.message, 'err');
+    }
+  }
+}
+
+// ── Step 2: Start/stop scanning ─────────────────────────────────────────
+function startScan() {
+  if (!permissionGranted || !videoStream) return;
+
+  video.srcObject = videoStream;
+  video.style.display = 'block';
+  show('scan-overlay');
+  hide('start-btn');
+  show('stop-btn');
+  scanning = true;
+  setStatus('Scanning… point at a barcode', 'active');
+
+  async function tick() {
+    if (!scanning) return;
+    if (video.readyState >= video.HAVE_ENOUGH_DATA) {
+      try {
+        const barcodes = await detector.detect(video);
+        for (const bc of barcodes) {
+          const val = bc.rawValue;
+          if (val && !cooldownSet.has(val)) {
+            cooldownSet.add(val);
+            setTimeout(() => cooldownSet.delete(val), 4000);
+            await handleBarcode(val);
+          }
+        }
+      } catch(_) {}
+    }
+    tickTimer = setTimeout(tick, 350);
+  }
+  tick();
+}
+
+function stopScan() {
+  scanning = false;
+  clearTimeout(tickTimer);
+  video.style.display = 'none';
+  video.srcObject = null;
+  hide('scan-overlay');
+  hide('stop-btn');
+  show('start-btn');
+  setStatus('Paused — tap Start to resume');
+}
+
+// ── Manual entry ────────────────────────────────────────────────────────
+function manualLookup() {
+  const v = document.getElementById('manual-input').value.trim();
+  if (!v) return;
+  document.getElementById('manual-input').value = '';
+  handleBarcode(v);
+}
+document.getElementById('manual-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') manualLookup();
+});
+
+// ── Product lookup ───────────────────────────────────────────────────────
+const EMOJIS = { dairy:'🥛', beverages:'🥤', snacks:'🍪', cereals:'🌾', meat:'🥩',
+  fruits:'🍎', vegetables:'🥦', bread:'🍞', frozen:'🧊', condiments:'🍯',
+  pasta:'🍝', coffee:'☕', chocolate:'🍫', chips:'🥔', water:'💧',
+  juice:'🧃', cheese:'🧀', eggs:'🥚', fish:'🐟', soup:'🍲' };
+
+function pickEmoji(cat, name) {
+  const s = (cat + ' ' + name).toLowerCase();
+  for (const [k, v] of Object.entries(EMOJIS)) { if (s.includes(k)) return v; }
+  return '🛒';
+}
+
+async function handleBarcode(code) {
+  // Check if user has previously named this barcode
+  if (customNames[code]) {
+    const c = customNames[code];
+    addItem({ name: c.name, brand: '', category: '', barcode: code, emoji: c.emoji, custom: true });
+    setStatus('Added: ' + c.name + ' (remembered)', 'ok');
+    return;
+  }
+  setStatus('Looking up ' + code + '…', 'active');
+  try {
+    const r = await fetch('https://world.openfoodfacts.org/api/v0/product/' + encodeURIComponent(code) + '.json');
+    const d = await r.json();
+    if (d.status === 1 && d.product) {
+      const p = d.product;
+      const name  = (p.product_name || p.product_name_en || '').trim() || 'Unknown product';
+      const brand = (p.brands || '').split(',')[0].trim();
+      const cat   = (p.categories_tags || []).find(c => c.startsWith('en:'))?.replace('en:','').replace(/-/g,' ') || '';
+      addItem({ name, brand, category: cat, barcode: code, emoji: pickEmoji(cat, name) });
+      setStatus('Added: ' + name, 'ok');
+    } else {
+      addItem({ name: 'Unknown — ' + code, brand: '', category: '', barcode: code, emoji: '🛒' });
+      setStatus('Not in database — tap ✏️ to name it', '');
+    }
+  } catch(_) {
+    addItem({ name: 'Product ' + code, brand: '', category: '', barcode: code, emoji: '🛒' });
+    setStatus('Network error — tap ✏️ to name it', '');
+  }
+}
+
+// ── List management ──────────────────────────────────────────────────────
+function addItem(product) {
+  const ex = items.find(i => i.barcode === product.barcode);
+  if (ex) { ex.qty++; showToast(ex.name + ' ×' + ex.qty); renderList(); return; }
+  items.push({ ...product, qty: 1, id: Date.now() + Math.random() });
+  showToast('Added: ' + product.name);
+  renderList();
+}
+function updateQty(id, d) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  item.qty += d;
+  if (item.qty <= 0) items = items.filter(i => i.id !== id);
+  renderList();
+}
+function removeItem(id) { items = items.filter(i => i.id !== id); renderList(); }
+function clearList() { if (confirm('Clear all items?')) { items = []; renderList(); } }
+
+function startEditName(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  const nameEl = document.getElementById('name-' + id);
+  const current = nameEl.textContent;
+  nameEl.innerHTML = `<input class="item-name-edit" id="edit-input-${id}" value="${current.replace(/"/g,'&quot;')}" />`;
+  const input = document.getElementById('edit-input-' + id);
+  input.focus();
+  input.select();
+  const save = () => {
+    const newName = input.value.trim();
+    if (newName && newName !== current) {
+      item.name = newName;
+      // Remember this barcode→name mapping permanently
+      customNames[item.barcode] = { name: newName, emoji: item.emoji };
+      saveCustomNames();
+      showToast('Name saved for future scans');
+    }
+    renderList();
+  };
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { renderList(); }
+  });
+}
+
+function renderList() {
+  const el = document.getElementById('item-list');
+  const total = items.reduce((s, i) => s + i.qty, 0);
+  document.getElementById('clear-btn').style.display = items.length ? '' : 'none';
+  const tally = document.getElementById('tally-bar');
+  tally.style.display = items.length ? 'flex' : 'none';
+  document.getElementById('tally-count').textContent = total;
+  if (!items.length) {
+    el.innerHTML = '<div class="empty-state"><p>scan or type a barcode to add items</p></div>';
+    return;
+  }
+  el.innerHTML = items.map(item => `
+    <div class="item-card">
+      <div class="item-icon">${item.emoji}</div>
+      <div class="item-info">
+        <div class="item-name" id="name-${item.id}">${item.name}${item.custom ? '<span class="custom-badge">custom</span>' : ''}</div>
+        <div class="item-meta">${[item.brand, item.category].filter(Boolean).join(' · ') || item.barcode}</div>
+      </div>
+      <button class="edit-btn" onclick="startEditName(${item.id})" title="Edit name">✏️</button>
+      <div class="qty-controls">
+        <button class="qty-btn" onclick="updateQty(${item.id}, -1)">−</button>
+        <span class="qty-num">${item.qty}</span>
+        <button class="qty-btn" onclick="updateQty(${item.id}, 1)">+</button>
+      </div>
+      <button class="del-btn" onclick="removeItem(${item.id})" title="Remove">✕</button>
+    </div>
+  `).join('');
+}
+
+renderList();
+</script>
+</body>
+</html>
