@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cart — Barcode Shopping List</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #F5F2EC; --surface: #FFFFFF; --ink: #1A1814; --ink2: #6B6760;
+    --ink3: #AAA8A3; --accent: #D4500A; --border: rgba(26,24,20,0.12);
+    --mono: 'DM Mono', monospace; --sans: 'Syne', sans-serif;
+  }
+  body { font-family: var(--sans); background: var(--bg); color: var(--ink); min-height: 100vh; }
+  .shell { max-width: 520px; margin: 0 auto; padding: 24px 16px 80px; }
+  header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1.5px solid var(--ink); }
+  .logo { font-size: 28px; font-weight: 700; letter-spacing: -1px; }
+  .logo span { color: var(--accent); }
+  .header-meta { font-family: var(--mono); font-size: 11px; color: var(--ink2); text-align: right; line-height: 1.6; }
+
+  /* Scanner card */
+  .scanner-card { background: var(--ink); border-radius: 16px; overflow: hidden; margin-bottom: 12px; }
+  .scanner-inner { position: relative; aspect-ratio: 4/3; width: 100%; background: #0d0c0a; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  #video { width: 100%; height: 100%; object-fit: cover; display: none; }
+
+  .scanner-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  .scan-frame { width: 65%; aspect-ratio: 3/1; border: 2px solid rgba(255,255,255,0.6); border-radius: 6px; position: relative; }
+  .scan-line { position: absolute; top: -1px; left: 15%; right: 15%; height: 2px; background: var(--accent); animation: scan 2s ease-in-out infinite; }
+  @keyframes scan { 0%,100% { top:-1px; } 50% { top:calc(100% - 1px); } }
+  .corner { position: absolute; width: 14px; height: 14px; border-color: white; border-style: solid; }
+  .corner-tl { top:-2px; left:-2px; border-width:2px 0 0 2px; border-radius:3px 0 0 0; }
+  .corner-tr { top:-2px; right:-2px; border-width:2px 2px 0 0; border-radius:0 3px 0 0; }
+  .corner-bl { bottom:-2px; left:-2px; border-width:0 0 2px 2px; border-radius:0 0 0 3px; }
+  .corner-br { bottom:-2px; right:-2px; border-width:0 2px 2px 0; border-radius:0 0 3px 0; }
+
+  /* Permission prompt (shown before camera starts) */
+  .perm-prompt { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 28px 20px; text-align: center; }
+  .perm-icon { width: 64px; height: 64px; border-radius: 16px; background: rgba(212,80,10,0.15); display: flex; align-items: center; justify-content: center; }
+  .perm-icon svg { width: 32px; height: 32px; color: var(--accent); stroke: currentColor; }
+  .perm-title { font-size: 16px; font-weight: 600; color: white; }
+  .perm-sub { font-family: var(--mono); font-size: 11px; color: rgba(255,255,255,0.45); line-height: 1.6; max-width: 260px; }
+  .perm-btn { background: var(--accent); color: white; border: none; border-radius: 10px; padding: 11px 28px; font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .perm-btn:active { opacity: .8; }
+
+  /* Denied state */
+  .denied-state { display: none; flex-direction: column; align-items: center; gap: 12px; padding: 28px 20px; text-align: center; }
+  .denied-state p { font-family: var(--mono); font-size: 12px; color: rgba(255,255,255,0.5); line-height: 1.7; max-width: 280px; }
+  .denied-state strong { color: rgba(255,255,255,0.8); }
+
+  .scanner-controls { padding: 14px 16px; display: flex; gap: 10px; }
+  .btn-primary { flex: 1; background: var(--accent); color: white; border: none; border-radius: 10px; padding: 12px 20px; font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+  .btn-primary:hover { opacity: .9; }
+  .btn-primary:active { opacity: .75; }
+  .btn-stop { background: rgba(255,255,255,0.12); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 12px 18px; font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer; display: none; }
+  .btn-stop:hover { background: rgba(255,255,255,0.2); }
+  .btn-cam { background: rgba(255,255,255,0.12); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 12px 14px; font-family: var(--mono); font-size: 12px; font-weight: 500; cursor: pointer; display: none; white-space: nowrap; max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+  .btn-cam:hover { background: rgba(255,255,255,0.2); }
+
+  .status-row { font-family: var(--mono); font-size: 12px; color: var(--ink2); padding: 10px 2px; display: flex; align-items: center; gap: 8px; min-height: 36px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink3); flex-shrink: 0; }
+  .dot.active { background: var(--accent); animation: blink 1s infinite; }
+  .dot.ok { background: #2A7A4B; }
+  .dot.err { background: #C0392B; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  .manual-section { display: flex; gap: 8px; margin-bottom: 24px; }
+  .manual-input { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; font-family: var(--mono); font-size: 13px; color: var(--ink); outline: none; }
+  .manual-input:focus { border-color: var(--accent); }
+  .manual-input::placeholder { color: var(--ink3); }
+  .lookup-btn { background: var(--ink); color: white; border: none; border-radius: 10px; padding: 11px 16px; font-family: var(--sans); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .lookup-btn:hover { opacity: .85; }
+
+  .list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .list-title { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink2); }
+  .clear-btn { font-family: var(--mono); font-size: 11px; color: var(--ink3); background: none; border: none; cursor: pointer; }
+  .clear-btn:hover { color: var(--accent); }
+
+  .empty-state { background: var(--surface); border: 1.5px dashed var(--border); border-radius: 14px; padding: 40px 20px; text-align: center; }
+  .empty-state p { font-family: var(--mono); font-size: 12px; color: var(--ink3); }
+
+  .item-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 8px; animation: slideIn 0.2s ease-out; }
+  @keyframes slideIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+  .item-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+  .item-info { flex: 1; min-width: 0; }
+  .item-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-meta { font-family: var(--mono); font-size: 11px; color: var(--ink2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qty-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .qty-btn { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-family: var(--mono); color: var(--ink); }
+  .qty-btn:hover { background: var(--surface); }
+  .qty-num { font-family: var(--mono); font-size: 14px; font-weight: 500; min-width: 22px; text-align: center; }
+  .del-btn { width: 28px; height: 28px; border-radius: 7px; border: none; background: none; cursor: pointer; color: var(--ink3); font-size: 16px; display: flex; align-items: center; justify-content: center; }
+  .del-btn:hover { color: var(--accent); }
+  .edit-btn { width: 28px; height: 28px; border-radius: 7px; border: none; background: none; cursor: pointer; color: var(--ink3); font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .edit-btn:hover { color: var(--ink); }
+  .item-name-edit { font-size: 14px; font-weight: 600; font-family: var(--sans); border: none; border-bottom: 1.5px solid var(--accent); background: transparent; color: var(--ink); outline: none; width: 100%; padding: 0 0 2px; }
+  .custom-badge { font-family: var(--mono); font-size: 10px; color: var(--accent); margin-left: 5px; opacity: 0.7; }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(26,24,20,0.55); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
+  .modal-card { background: var(--surface); border-radius: 16px; padding: 28px 24px; width: 100%; max-width: 360px; }
+  .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .modal-sub { font-family: var(--mono); font-size: 12px; color: var(--ink2); margin-bottom: 20px; line-height: 1.6; }
+  .modal-input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; font-family: var(--sans); font-size: 14px; color: var(--ink); outline: none; margin-bottom: 12px; }
+  .modal-input:focus { border-color: var(--accent); }
+  .modal-btn { width: 100%; background: var(--accent); color: white; border: none; border-radius: 10px; padding: 12px; font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .modal-btn:hover { opacity: .9; }
+  .send-btn { width: 100%; background: var(--ink); color: white; border: none; border-radius: 10px; padding: 13px 20px; font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 4px; display: none; transition: opacity .15s; }
+  .send-btn:hover { opacity: .85; }
+  .send-btn:disabled { opacity: .4; cursor: default; }
+  .sync-bar { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .sync-label { font-family: var(--mono); font-size: 11px; color: var(--ink2); flex: 1; min-width: 120px; }
+  .sync-btn { font-family: var(--mono); font-size: 11px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; color: var(--ink); white-space: nowrap; }
+  .sync-btn:hover { border-color: var(--ink3); }
+  .sync-btn.primary { background: var(--ink); color: white; border-color: var(--ink); }
+  .sync-btn.primary:hover { opacity: .85; }
+  .sync-code-wrap { width: 100%; display: none; }
+  .sync-code { width: 100%; font-family: var(--mono); font-size: 11px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--ink); outline: none; resize: none; }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--ink); color: white; padding: 10px 20px; border-radius: 99px; font-family: var(--mono); font-size: 12px; pointer-events: none; transition: transform .25s, opacity .25s; opacity: 0; white-space: nowrap; z-index: 100; }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  .tally-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 520px; background: var(--surface); border-top: 1px solid var(--border); padding: 14px 20px; display: none; align-items: center; justify-content: space-between; }
+  .tally-label { font-family: var(--mono); font-size: 12px; color: var(--ink2); }
+  .tally-count { font-size: 18px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div class="logo">CART<span>.</span></div>
+    <div class="header-meta">Barcode scanner<br>+ shopping list</div>
+  </header>
+
+  <div class="scanner-card">
+    <div class="scanner-inner" id="scanner-inner">
+
+      <!-- Step 1: Ask for permission -->
+      <div class="perm-prompt" id="perm-prompt">
+        <div class="perm-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+        </div>
+        <div class="perm-title">Camera access needed</div>
+        <div class="perm-sub">To scan barcodes, this app needs to use your camera. Your browser will ask you to allow it.</div>
+        <button class="perm-btn" id="perm-btn" onclick="requestCamera()">Allow camera</button>
+      </div>
+
+      <!-- Step 2: Denied fallback -->
+      <div class="denied-state" id="denied-state">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+        </svg>
+        <p>
+          Camera access was blocked.<br>
+          <strong>To fix on Android:</strong> tap the 🔒 lock icon in your browser's address bar → Site settings → Camera → Allow, then reload.<br>
+          <strong>Manual entry</strong> still works below.
+        </p>
+      </div>
+
+      <!-- Step 3: Live feed -->
+      <video id="video" autoplay playsinline muted></video>
+      <div class="scanner-overlay" id="scan-overlay" style="display:none;">
+        <div class="scan-frame">
+          <div class="scan-line"></div>
+          <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
+          <div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="scanner-controls">
+      <button class="btn-primary" id="start-btn" onclick="startScan()" style="display:none;">Start scanning</button>
+      <button class="btn-stop"    id="stop-btn"  onclick="stopScan()">Stop scanning</button>
+      <button class="btn-cam"     id="cam-btn"   onclick="switchCamera()">📷 Switch</button>
+    </div>
+  </div>
+
+  <div class="status-row">
+    <div class="dot" id="dot"></div>
+    <span id="status-text">Tap "Allow camera" to begin</span>
+  </div>
+
+  <div class="sync-bar" id="sync-bar">
+    <span class="sync-label" id="sync-label">💾 List saved locally</span>
+    <button class="sync-btn" onclick="exportList()">Export</button>
+    <button class="sync-btn" onclick="toggleImport()">Import</button>
+    <div class="sync-code-wrap" id="import-wrap">
+      <textarea class="sync-code" id="import-code" rows="3" placeholder="Paste export code here…"></textarea>
+      <div style="display:flex;gap:8px;margin-top:6px;">
+        <button class="sync-btn primary" onclick="doImport()">Load list</button>
+        <button class="sync-btn" onclick="toggleImport()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="manual-section">
+    <input class="manual-input" id="manual-input" type="text" placeholder="Or enter barcode manually…" inputmode="numeric" />
+    <button class="lookup-btn" onclick="manualLookup()">Look up</button>
+  </div>
+
+  <div class="list-header">
+    <div class="list-title">Shopping list</div>
+    <button class="clear-btn" id="clear-btn" onclick="clearList()" style="display:none;">Clear all</button>
+  </div>
+  <button class="send-btn" id="send-btn" onclick="sendToSheet()">Send to Google Sheets ↗</button>
+  <div id="item-list">
+    <div class="empty-state"><p>scan or type a barcode to add items</p></div>
+  </div>
+</div>
+
+<div class="tally-bar" id="tally-bar">
+  <span class="tally-label">Total items</span>
+  <span class="tally-count" id="tally-count">0</span>
+</div>
+<div class="toast" id="toast"></div>
+
+<!-- Username modal -->
+<div class="modal-backdrop" id="username-modal" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-title">Who are you?</div>
+    <div class="modal-sub">Your name is saved with the list when sent to Google Sheets. Change it here any time someone else uses the app.</div>
+    <input class="modal-input" id="username-input" type="text" placeholder="Enter your name…" maxlength="40" />
+    <button class="modal-btn" onclick="saveUsername()">Continue</button>
+  </div>
+</div>
+
+<script>
+let items = [];
+let scanning = false;
+let videoStream = null;
+let detector = null;
+let tickTimer = null;
+let cooldownSet = new Set();
+let permissionGranted = false;
+let cameras = [];        // list of available video input devices
+let camIndex = 0;        // which one is active
+
+// Persistent custom barcode names: { barcode: { name, emoji } }
+let customNames = {};
+try { customNames = JSON.parse(localStorage.getItem('cart_custom_names') || '{}' ); } catch(_) {}
+function saveCustomNames() { try { localStorage.setItem('cart_custom_names', JSON.stringify(customNames)); } catch(_) {} }
+
+// ── Username ─────────────────────────────────────────────────────────────
+let currentUser = '';
+try { currentUser = localStorage.getItem('cart_username') || ''; } catch(_) {}
+
+function saveUsername() {
+  const val = document.getElementById('username-input').value.trim();
+  if (!val) { document.getElementById('username-input').focus(); return; }
+  currentUser = val;
+  try { localStorage.setItem('cart_username', val); } catch(_) {}
+  document.getElementById('username-modal').style.display = 'none';
+}
+
+// Show modal on load if no username saved
+function maybeShowUsernameModal() {
+  const modal = document.getElementById('username-modal');
+  const input = document.getElementById('username-input');
+  // Always show — pre-fill saved name so returning users just tap Continue
+  if (currentUser) input.value = currentUser;
+  modal.style.display = 'flex';
+  setTimeout(() => { input.focus(); input.select(); }, 100);
+}
+
+// ── Google Sheets sync ────────────────────────────────────────────────────
+// Paste your Apps Script Web App URL here:
+const SHEET_URL = '';
+
+async function sendToSheet() {
+  if (!items.length) { showToast('Nothing to send'); return; }
+  if (!SHEET_URL) {
+    showToast('No Google Sheet URL configured');
+    return;
+  }
+  const btn = document.getElementById('send-btn');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const payload = {
+      user: currentUser || 'Unknown',
+      items: items.map(i => ({ name: i.name, brand: i.brand || '', qty: i.qty, barcode: i.barcode }))
+    };
+    const resp = await fetch(SHEET_URL, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    const result = await resp.json();
+    if (result.success) {
+      showToast('Sent ' + result.count + ' item' + (result.count !== 1 ? 's' : '') + ' to Sheets ✓');
+      btn.textContent = 'Sent ✓';
+      setTimeout(() => { btn.textContent = 'Send to Google Sheets ↗'; btn.disabled = false; }, 3000);
+    } else {
+      throw new Error('Sheet returned error');
+    }
+  } catch(e) {
+    showToast('Failed to send — check your Sheet URL');
+    btn.textContent = 'Send to Google Sheets ↗';
+    btn.disabled = false;
+  }
+}
+
+// Persist shopping list across sessions
+function saveList() {
+  try { localStorage.setItem('cart_items', JSON.stringify(items)); } catch(_) {}
+}
+function loadList() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('cart_items') || '[]');
+    if (Array.isArray(saved)) items = saved;
+  } catch(_) {}
+}
+
+// Export/import for cross-device sync
+function exportList() {
+  if (!items.length) { showToast('Nothing to export'); return; }
+  const payload = { items, customNames, v: 1 };
+  const code = btoa(JSON.stringify(payload));
+  // Show in a prompt so user can copy easily
+  const lines = Math.min(4, Math.ceil(code.length / 60));
+  const wrap = document.getElementById('import-wrap');
+  const ta = document.getElementById('import-code');
+  wrap.style.display = 'block';
+  ta.value = code;
+  ta.rows = lines;
+  ta.select();
+  // Try native share first
+  if (navigator.share) {
+    navigator.share({ title: 'Shopping list', text: code }).catch(() => {});
+  } else {
+    try { document.execCommand('copy'); showToast('Copied to clipboard'); } catch(_) { showToast('Select the code above and copy it'); }
+  }
+  document.getElementById('sync-label').textContent = '📤 Copy this code to your other device';
+}
+
+function toggleImport() {
+  const wrap = document.getElementById('import-wrap');
+  const visible = wrap.style.display === 'block';
+  wrap.style.display = visible ? 'none' : 'block';
+  if (!visible) {
+    document.getElementById('import-code').value = '';
+    document.getElementById('import-code').focus();
+    document.getElementById('sync-label').textContent = '📥 Paste export code below';
+  } else {
+    document.getElementById('sync-label').textContent = '💾 List saved locally';
+  }
+}
+
+function doImport() {
+  const code = document.getElementById('import-code').value.trim();
+  if (!code) { showToast('Paste an export code first'); return; }
+  try {
+    const payload = JSON.parse(atob(code));
+    if (!payload.items || !Array.isArray(payload.items)) throw new Error('Invalid');
+    const count = payload.items.length;
+    if (!confirm('Replace your current list with ' + count + ' imported item' + (count !== 1 ? 's' : '') + '?')) return;
+    items = payload.items;
+    if (payload.customNames) {
+      customNames = { ...customNames, ...payload.customNames };
+      saveCustomNames();
+    }
+    saveList();
+    renderList();
+    toggleImport();
+    document.getElementById('sync-label').textContent = '✅ List imported';
+    setTimeout(() => { document.getElementById('sync-label').textContent = '💾 List saved locally'; }, 3000);
+    showToast('Imported ' + count + ' item' + (count !== 1 ? 's' : ''));
+  } catch(_) {
+    showToast('Invalid export code');
+  }
+}
+
+// Persist last used camera deviceId
+let savedCamId = null;
+try { savedCamId = localStorage.getItem('cart_cam_id'); } catch(_) {}
+
+const video = document.getElementById('video');
+
+// ── UI helpers ──────────────────────────────────────────────────────────
+function setStatus(msg, mode) {
+  document.getElementById('status-text').textContent = msg;
+  document.getElementById('dot').className = 'dot' + (mode ? ' ' + mode : '');
+}
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => t.classList.remove('show'), 2400);
+}
+function show(id) { const el = document.getElementById(id); el.style.display = el.tagName === 'BUTTON' ? 'block' : 'flex'; }
+function hide(id) { document.getElementById(id).style.display = 'none'; }
+
+// ── Step 1: Request camera permission ───────────────────────────────────
+async function requestCamera() {
+  // BarcodeDetector is used when available (Android Chrome/Edge).
+  // On iOS Safari it's not supported, so we fall back to our built-in canvas decoder.
+
+  const btn = document.getElementById('perm-btn');
+  btn.textContent = 'Asking…';
+  btn.disabled = true;
+
+  try {
+    // Initial stream just to trigger the permission dialog
+    const initStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    initStream.getTracks().forEach(t => t.stop());
+
+    // Now enumerate all cameras (only works after permission granted)
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    cameras = devices.filter(d => d.kind === 'videoinput');
+
+    // Pick best default: prefer widest-angle rear camera
+    // On Android, cameras are usually listed widest→telephoto or the reverse.
+    // We try to find one labelled 'wide' or '0' (index 0 is usually the main lens),
+    // otherwise fall back to the last rear-facing device (often widest on multi-lens phones).
+    let bestIdx = 0;
+    if (savedCamId) {
+      const saved = cameras.findIndex(c => c.deviceId === savedCamId);
+      if (saved !== -1) bestIdx = saved;
+    } else {
+      // Prefer a camera whose label suggests wide angle
+      const wideIdx = cameras.findIndex(c => /wide|0\.5|main|back 0/i.test(c.label));
+      if (wideIdx !== -1) bestIdx = wideIdx;
+      else {
+        // Fallback: last rear camera (on many Androids this is the main/wide lens)
+        const rearIdx = cameras.map((c,i) => /back|rear|environment/i.test(c.label) ? i : -1).filter(i => i !== -1);
+        if (rearIdx.length) bestIdx = rearIdx[0];
+      }
+    }
+    camIndex = bestIdx;
+
+    if ('BarcodeDetector' in window) {
+      detector = new BarcodeDetector({
+        formats: ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','code_93','itf','codabar','qr_code','data_matrix']
+      });
+    } else {
+      detector = null; // will use canvas fallback
+    }
+
+    permissionGranted = true;
+    buildDeviceModes();
+    hide('perm-prompt');
+    show('start-btn');
+    hide('stop-btn');
+    startScan(true);
+
+  } catch(e) {
+    hide('perm-prompt');
+    show('denied-state');
+    if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+      setStatus('Camera permission denied', 'err');
+    } else if (e.name === 'NotFoundError') {
+      setStatus('No camera found on this device', 'err');
+    } else {
+      setStatus('Camera error: ' + e.message, 'err');
+    }
+  }
+}
+
+// ── Camera cycling ───────────────────────────────────────────────────────
+// We define a list of constraints to try in sequence when switching.
+// This works even when Android only exposes one deviceId — different
+// constraints can still open different physical lenses.
+const CAM_MODES = [
+  { label: 'Back (standard)', video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720  } } },
+  { label: 'Back (wide)',     video: { facingMode: 'environment', width: { ideal: 4032 }, height: { ideal: 3024 } } },
+  { label: 'Back (HD)',       video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } },
+  { label: 'Front',           video: { facingMode: 'user',        width: { ideal: 1280 }, height: { ideal: 720  } } },
+];
+// Also include any individually enumerated deviceIds (populated after permission)
+let deviceModes = [];   // filled in requestCamera
+let modeIndex = 0;
+
+function buildDeviceModes() {
+  // Start with individually-addressable cameras by deviceId, then fall back to CAM_MODES
+  deviceModes = cameras.map((c, i) => ({
+    label: c.label ? c.label.replace(/\(.*?\)/g, '').trim().slice(0, 24) : ('Camera ' + (i + 1)),
+    video: { deviceId: { exact: c.deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+  }));
+  // If only one deviceId exposed, append the facingMode variants so the user can still try them
+  if (deviceModes.length <= 1) {
+    deviceModes = [...deviceModes, ...CAM_MODES];
+  }
+  // Restore saved index
+  try {
+    const saved = parseInt(localStorage.getItem('cart_cam_idx') || '0');
+    modeIndex = isNaN(saved) ? 0 : saved % deviceModes.length;
+  } catch(_) { modeIndex = 0; }
+}
+
+// ── Step 2: Start/stop/switch scanning ──────────────────────────────────
+async function startScan(showError) {
+  if (!permissionGranted) return;
+
+  if (videoStream) { videoStream.getTracks().forEach(t => t.stop()); videoStream = null; }
+
+  const mode = deviceModes[modeIndex] || deviceModes[0];
+  try {
+    videoStream = await navigator.mediaDevices.getUserMedia(mode.video.advanced
+      ? { video: { ...mode.video } }
+      : { video: mode.video });
+  } catch(e) {
+    // advanced constraints (zoom) not supported — retry without them
+    try {
+      const plain = { ...mode.video };
+      delete plain.advanced;
+      videoStream = await navigator.mediaDevices.getUserMedia({ video: plain });
+    } catch(e2) {
+      if (showError) setStatus('Could not open camera: ' + e2.message, 'err');
+      return false;
+    }
+  }
+
+  video.srcObject = videoStream;
+  video.style.display = 'block';
+  show('scan-overlay');
+  hide('start-btn');
+  show('stop-btn');
+  scanning = true;
+
+  // Always show switch button
+  const camBtn = document.getElementById('cam-btn');
+  camBtn.style.display = 'block';
+  camBtn.textContent = '📷 ' + (mode.label || 'Camera');
+
+  setStatus('Scanning… point at a barcode', 'active');
+
+  // Canvas used for iOS fallback decoding
+  const scanCanvas = document.createElement('canvas');
+  const scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
+
+  async function tick() {
+    if (!scanning) return;
+    if (video.readyState >= video.HAVE_ENOUGH_DATA) {
+      try {
+        let val = null;
+        if (detector) {
+          const barcodes = await detector.detect(video);
+          if (barcodes.length) val = barcodes[0].rawValue;
+        } else {
+          // iOS canvas fallback
+          scanCanvas.width  = video.videoWidth  || 640;
+          scanCanvas.height = video.videoHeight || 480;
+          scanCtx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
+          val = decodeBarcode(scanCtx, scanCanvas.width, scanCanvas.height);
+        }
+        if (val && !cooldownSet.has(val)) {
+          cooldownSet.add(val);
+          setTimeout(() => cooldownSet.delete(val), 4000);
+          await handleBarcode(val);
+        }
+      } catch(_) {}
+    }
+    tickTimer = setTimeout(tick, detector ? 350 : 200);
+  }
+  tick();
+  return true;
+}
+
+function stopScan() {
+  scanning = false;
+  clearTimeout(tickTimer);
+  if (videoStream) { videoStream.getTracks().forEach(t => t.stop()); videoStream = null; }
+  video.style.display = 'none';
+  video.srcObject = null;
+  hide('scan-overlay');
+  hide('stop-btn');
+  hide('cam-btn');
+  show('start-btn');
+  setStatus('Paused — tap Start to resume');
+}
+
+async function switchCamera() {
+  scanning = false;
+  clearTimeout(tickTimer);
+  modeIndex = (modeIndex + 1) % deviceModes.length;
+  try { localStorage.setItem('cart_cam_idx', modeIndex); } catch(_) {}
+  const ok = await startScan(true);
+  if (!ok) {
+    // This mode failed — skip it and try next
+    modeIndex = (modeIndex + 1) % deviceModes.length;
+    try { localStorage.setItem('cart_cam_idx', modeIndex); } catch(_) {}
+    await startScan(true);
+  }
+}
+
+// ── Manual entry ────────────────────────────────────────────────────────
+function manualLookup() {
+  const v = document.getElementById('manual-input').value.trim();
+  if (!v) return;
+  document.getElementById('manual-input').value = '';
+  handleBarcode(v);
+}
+document.getElementById('manual-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') manualLookup();
+});
+
+// ── Product lookup ───────────────────────────────────────────────────────
+const EMOJIS = { dairy:'🥛', beverages:'🥤', snacks:'🍪', cereals:'🌾', meat:'🥩',
+  fruits:'🍎', vegetables:'🥦', bread:'🍞', frozen:'🧊', condiments:'🍯',
+  pasta:'🍝', coffee:'☕', chocolate:'🍫', chips:'🥔', water:'💧',
+  juice:'🧃', cheese:'🧀', eggs:'🥚', fish:'🐟', soup:'🍲' };
+
+function pickEmoji(cat, name) {
+  const s = (cat + ' ' + name).toLowerCase();
+  for (const [k, v] of Object.entries(EMOJIS)) { if (s.includes(k)) return v; }
+  return '🛒';
+}
+
+async function handleBarcode(code) {
+  // Check if user has previously named this barcode
+  if (customNames[code]) {
+    const c = customNames[code];
+    addItem({ name: c.name, brand: '', category: '', barcode: code, emoji: c.emoji, custom: true });
+    setStatus('Added: ' + c.name + ' (remembered)', 'ok');
+    return;
+  }
+  setStatus('Looking up ' + code + '…', 'active');
+  try {
+    const r = await fetch('https://world.openfoodfacts.org/api/v0/product/' + encodeURIComponent(code) + '.json');
+    const d = await r.json();
+    if (d.status === 1 && d.product) {
+      const p = d.product;
+      const name  = (p.product_name || p.product_name_en || '').trim() || 'Unknown product';
+      const brand = (p.brands || '').split(',')[0].trim();
+      const cat   = (p.categories_tags || []).find(c => c.startsWith('en:'))?.replace('en:','').replace(/-/g,' ') || '';
+      addItem({ name, brand, category: cat, barcode: code, emoji: pickEmoji(cat, name) });
+      setStatus('Added: ' + name, 'ok');
+    } else {
+      addItem({ name: 'Unknown — ' + code, brand: '', category: '', barcode: code, emoji: '🛒' });
+      setStatus('Not in database — tap ✏️ to name it', '');
+    }
+  } catch(_) {
+    addItem({ name: 'Product ' + code, brand: '', category: '', barcode: code, emoji: '🛒' });
+    setStatus('Network error — tap ✏️ to name it', '');
+  }
+}
+
+// ── List management ──────────────────────────────────────────────────────
+function addItem(product) {
+  const ex = items.find(i => i.barcode === product.barcode);
+  if (ex) { ex.qty++; showToast(ex.name + ' ×' + ex.qty); saveList(); renderList(); return; }
+  items.push({ ...product, qty: 1, id: Date.now() + Math.random() });
+  showToast('Added: ' + product.name);
+  saveList(); renderList();
+}
+function updateQty(id, d) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  item.qty += d;
+  if (item.qty <= 0) items = items.filter(i => i.id !== id);
+  saveList(); renderList();
+}
+function removeItem(id) { items = items.filter(i => i.id !== id); saveList(); renderList(); }
+function clearList() {
+  if (confirm('Clear entire shopping list?')) { items = []; saveList(); renderList(); showToast('List cleared'); }
+}
+
+function startEditName(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  const nameEl = document.getElementById('name-' + id);
+  const current = nameEl.textContent;
+  nameEl.innerHTML = `<input class="item-name-edit" id="edit-input-${id}" value="${current.replace(/"/g,'&quot;')}" />`;
+  const input = document.getElementById('edit-input-' + id);
+  input.focus();
+  input.select();
+  const save = () => {
+    const newName = input.value.trim();
+    if (newName && newName !== current) {
+      item.name = newName;
+      // Remember this barcode→name mapping permanently
+      customNames[item.barcode] = { name: newName, emoji: item.emoji };
+      saveCustomNames();
+      showToast('Name saved for future scans');
+    }
+    renderList();
+  };
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { renderList(); }
+  });
+}
+
+function renderList() {
+  const el = document.getElementById('item-list');
+  const total = items.reduce((s, i) => s + i.qty, 0);
+  document.getElementById('clear-btn').style.display = items.length ? '' : 'none';
+  document.getElementById('send-btn').style.display = items.length ? 'block' : 'none';
+  const tally = document.getElementById('tally-bar');
+  tally.style.display = items.length ? 'flex' : 'none';
+  document.getElementById('tally-count').textContent = total;
+  if (!items.length) {
+    el.innerHTML = '<div class="empty-state"><p>scan or type a barcode to add items</p></div>';
+    return;
+  }
+  el.innerHTML = items.map(item => `
+    <div class="item-card">
+      <div class="item-icon">${item.emoji}</div>
+      <div class="item-info">
+        <div class="item-name" id="name-${item.id}">${item.name}${item.custom ? '<span class="custom-badge">custom</span>' : ''}</div>
+        <div class="item-meta">${[item.brand, item.category].filter(Boolean).join(' · ') || item.barcode}</div>
+      </div>
+      <button class="edit-btn" onclick="startEditName(${item.id})" title="Edit name">✏️</button>
+      <div class="qty-controls">
+        <button class="qty-btn" onclick="updateQty(${item.id}, -1)">−</button>
+        <span class="qty-num">${item.qty}</span>
+        <button class="qty-btn" onclick="updateQty(${item.id}, 1)">+</button>
+      </div>
+      <button class="del-btn" onclick="removeItem(${item.id})" title="Remove">✕</button>
+    </div>
+  `).join('');
+}
+
+
+// ── Pure-JS barcode decoder (iOS Safari fallback) ─────────────────────────
+// Decodes EAN-13, EAN-8, UPC-A, UPC-E, Code 128, Code 39 from a canvas row.
+// Scans multiple horizontal rows across the frame for robustness.
+function decodeBarcode(ctx, w, h) {
+  const rows = [0.3, 0.4, 0.5, 0.6, 0.7].map(f => Math.floor(h * f));
+  for (const y of rows) {
+    const data = ctx.getImageData(0, y, w, 1).data;
+    // Convert to grayscale binary (threshold ~128)
+    const px = new Uint8Array(w);
+    for (let x = 0; x < w; x++) {
+      const i = x * 4;
+      px[x] = (0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2]) < 128 ? 1 : 0;
+    }
+    const result = tryEAN(px, w) || tryCode128(px, w) || tryCode39(px, w);
+    if (result) return result;
+  }
+  return null;
+}
+
+// Run-length encode pixel row into bar widths
+function runs(px, w) {
+  const r = [];
+  let cur = px[0], cnt = 1;
+  for (let i = 1; i < w; i++) {
+    if (px[i] === cur) { cnt++; }
+    else { r.push({ v: cur, n: cnt }); cur = px[i]; cnt = 1; }
+  }
+  r.push({ v: cur, n: cnt });
+  return r;
+}
+
+// Normalise run widths to module units (1-4)
+function normalise(bars, unit) {
+  return bars.map(b => Math.max(1, Math.min(4, Math.round(b.n / unit))));
+}
+
+// ── EAN-13 / EAN-8 / UPC-A ────────────────────────────────────────────────
+const EAN_L = ['0001101','0011001','0010011','0111101','0100011','0110001','0101111','0111011','0110111','0001011'];
+const EAN_G = ['0100111','0110011','0011011','0100001','0011101','0111001','0000101','0010001','0001001','0010111'];
+const EAN_R = ['1110010','1100110','1101100','1000010','1011100','1001110','1010000','1000100','1001000','1110100'];
+const EAN_PARITY = ['LLLLLL','LLGLGG','LLGGLG','LLGGGL','LGLLGG','LGGLLG','LGGGLL','LGLGLG','LGLGGL','LGGLGL'];
+
+function barsToEANDigit(bits) {
+  const s = bits.join('');
+  for (let d = 0; d < 10; d++) {
+    if (s === EAN_L[d]) return { digit: d, enc: 'L' };
+    if (s === EAN_G[d]) return { digit: d, enc: 'G' };
+    if (s === EAN_R[d]) return { digit: d, enc: 'R' };
+  }
+  return null;
+}
+
+function tryEAN(px, w) {
+  const r = runs(px, w);
+  // Find start guard (101) — dark run
+  for (let si = 0; si < r.length - 60; si++) {
+    if (r[si].v !== 1) continue;
+    const unit = r[si].n;
+    if (unit < 1) continue;
+
+    // Attempt EAN-13: 3 guard + 6*7 + 5 middle + 6*7 + 3 guard = 95 modules
+    try {
+      // Check start guard pattern 1-1-1
+      const n = normalise(r.slice(si, si+3), unit);
+      if (n[0]!==1||n[1]!==1||n[2]!==1) continue;
+
+      let pos = si + 3;
+      const digits = [];
+      const encs = [];
+      // Left 6 digits (L or G encoding)
+      for (let d = 0; d < 6; d++) {
+        if (pos + 4 > r.length) break;
+        const bars = normalise(r.slice(pos, pos+4), unit);
+        const bits = [];
+        bars.forEach((b,i) => { for(let j=0;j<b;j++) bits.push(r[pos+i].v); });
+        if (bits.length < 7) break;
+        const res = barsToEANDigit(bits.slice(0,7));
+        if (!res) break;
+        digits.push(res.digit);
+        encs.push(res.enc);
+        pos += 4;
+      }
+      if (digits.length !== 6) continue;
+
+      // Middle guard 01010
+      const mg = normalise(r.slice(pos, pos+5), unit);
+      if (mg[0]!==1||mg[1]!==1||mg[2]!==1||mg[3]!==1||mg[4]!==1) continue;
+      pos += 5;
+
+      // Right 6 digits (R encoding only)
+      for (let d = 0; d < 6; d++) {
+        if (pos + 4 > r.length) break;
+        const bars = normalise(r.slice(pos, pos+4), unit);
+        const bits = [];
+        bars.forEach((b,i) => { for(let j=0;j<b;j++) bits.push(r[pos+i].v); });
+        if (bits.length < 7) break;
+        const res = barsToEANDigit(bits.slice(0,7));
+        if (!res || res.enc !== 'R') break;
+        digits.push(res.digit);
+        pos += 4;
+      }
+      if (digits.length !== 12) continue;
+
+      // Determine first digit from parity pattern of left digits
+      const parityStr = encs.join('');
+      const firstDigit = EAN_PARITY.indexOf(parityStr);
+      if (firstDigit === -1) continue;
+      const allDigits = [firstDigit, ...digits];
+
+      // Validate checksum
+      let sum = 0;
+      for (let i = 0; i < 12; i++) sum += allDigits[i] * (i % 2 === 0 ? 1 : 3);
+      const check = (10 - (sum % 10)) % 10;
+
+      // End guard
+      if (pos + 3 <= r.length) {
+        const eg = normalise(r.slice(pos, pos+3), unit);
+        if (eg[0]===1&&eg[1]===1&&eg[2]===1) {
+          // read check digit
+          const checkDigit = allDigits[12] !== undefined ? allDigits[12] : check;
+          if (check === checkDigit) {
+            return allDigits.slice(0,12).join('') + check;
+          }
+        }
+      }
+    } catch(_) {}
+  }
+  return null;
+}
+
+// ── Code 39 ───────────────────────────────────────────────────────────────
+const C39_MAP = {
+  '111221211':'0','211211112':'1','112211112':'2','212211111':'3',
+  '111221112':'4','211221111':'5','112221111':'6','111211212':'7',
+  '211211211':'8','112211211':'9','211112112':'A','112112112':'B',
+  '212112111':'C','111122112':'D','211122111':'E','112122111':'F',
+  '111112212':'G','211112211':'H','112112211':'I','111122211':'J',
+  '211111122':'K','112111122':'L','212111121':'M','111121122':'N',
+  '211121121':'O','112121121':'P','111111222':'Q','211111221':'R',
+  '112111221':'S','111121221':'T','221111112':'U','122111112':'V',
+  '222111111':'W','121121112':'X','221121111':'Y','122121111':'Z',
+  '121111212':'-','221111211':'.','122111211':' ','111212112':'*',
+  '121212111':'$','121211121':'/','121112121':'+','111212121':'%'
+};
+
+function tryCode39(px, w) {
+  const r = runs(px, w);
+  const result = [];
+  let si = 0;
+  // Find * start character
+  while (si < r.length - 9) {
+    if (r[si].v !== 1) { si++; continue; }
+    const unit = r[si].n;
+    const slice9 = r.slice(si, si+9);
+    const widths = slice9.map(b => b.n < unit*1.8 ? '1' : '2').join('');
+    const ch = C39_MAP[widths];
+    if (ch === '*') {
+      si += 9 + 1; // skip inter-char gap
+      while (si < r.length - 9) {
+        const s9 = r.slice(si, si+9);
+        if (s9.length < 9) break;
+        const u2 = s9[0].n < s9[2].n ? s9[0].n : s9[2].n;
+        const w9 = s9.map(b => b.n < u2*1.8 ? '1' : '2').join('');
+        const c = C39_MAP[w9];
+        if (!c) break;
+        if (c === '*') { if (result.length > 0) return result.join(''); break; }
+        result.push(c);
+        si += 10;
+      }
+    }
+    si++;
+  }
+  return null;
+}
+
+// ── Code 128 (simplified — subset B ASCII) ───────────────────────────────
+function tryCode128(px, w) {
+  const r = runs(px, w);
+  // Look for Code 128 start B: 211214 in module units
+  for (let si = 0; si < r.length - 12; si++) {
+    if (r[si].v !== 1) continue;
+    const unit = r[si].n;
+    if (unit < 1) continue;
+    const startNorm = normalise(r.slice(si, si+6), unit);
+    if (startNorm.join('') !== '211214') continue;
+    let pos = si + 6;
+    const chars = [];
+    let checksum = 104; // start B value
+    let idx = 1;
+    while (pos + 6 <= r.length) {
+      const norm = normalise(r.slice(pos, pos+6), unit);
+      const key = norm.join('');
+      // Check for stop character 2331112
+      const stopNorm = normalise(r.slice(pos, pos+7), unit);
+      if (stopNorm.join('') === '2331112') {
+        if (chars.length === 0) break;
+        // Validate checksum: last data char should equal (checksum - sum) % 103
+        const data = chars.slice(0, -1);
+        const chk = chars[chars.length-1];
+        let s = 104;
+        data.forEach((v,i) => s += v*(i+1));
+        if (s % 103 === chk) return data.map(v => String.fromCharCode(v+32)).join('');
+        break;
+      }
+      const val = CODE128B_VALS[key];
+      if (val === undefined) break;
+      chars.push(val);
+      checksum += val * idx++;
+      pos += 6;
+    }
+  }
+  return null;
+}
+
+// Code 128B value table (symbol → value 0-106)
+const CODE128B_VALS = (function(){
+  const patterns = ['212222','222122','222221','121223','121322','131222','122213','122312','132212','221213','221312','231212','112232','122132','122231','113222','123122','123221','223211','221132','221231','213212','223112','312131','311222','321122','321221','312212','322112','322211','212123','212321','232121','111323','131123','131321','112313','132113','132311','211313','231113','231311','112133','112331','132131','113123','113321','133121','313121','211331','231131','213113','213311','213131','311123','311321','331121','312113','312311','332111','314111','221411','431111','111224','111422','121124','121421','141122','141221','112214','112412','122114','122411','142112','142211','241211','221114','213111','241112','134111','111242','121142','121241','114212','124112','124211','411212','421112','421211','212141','214121','412121','111143','111341','131141','114113','114311','411113','411311','113141','114131','311141','411131','211412','211214','211232','2331112'];
+  const m = {};
+  patterns.forEach((p,i) => { m[p] = i; });
+  return m;
+})();
+// ── End barcode decoder ───────────────────────────────────────────────────
+
+loadList();
+renderList();
+maybeShowUsernameModal();
+document.getElementById('username-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveUsername(); });
+</script>
+</body>
+</html>
